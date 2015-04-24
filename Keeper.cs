@@ -20,6 +20,8 @@ namespace JarScanner
     /// <summary>
     /// Description of Keeper.
     /// </summary>
+    /// 
+    [Serializable]
     public class Keeper
     {
         public Dictionary<string, ArrayList> Entries {
@@ -34,7 +36,7 @@ namespace JarScanner
         {
         }
         
-       
+        
         
         public string ToString()
         {
@@ -45,7 +47,10 @@ namespace JarScanner
                     sb.AppendLine("    " + entry);
                 }
             }
-            return sb.ToString();
+            if(sb.Length > 10000)
+                return sb.ToString().Substring(0, 10000) + Environment.NewLine+ "... many more results";
+            else
+                return sb.ToString();
         }
         
         public string ToString(string text)
@@ -56,7 +61,7 @@ namespace JarScanner
                 partialSb.AppendLine(Environment.NewLine + fileEntry.Key);
                 int count = 0;
                 foreach(string entry in fileEntry.Value){
-                    if (entry.Contains(text)) {
+                    if (entry.IndexOf(text,StringComparison.OrdinalIgnoreCase)>=0) {
                         partialSb.AppendLine("    " + entry);
                         count++;
                     }
@@ -64,7 +69,12 @@ namespace JarScanner
                 if (count > 0)
                     sb.Append(partialSb);
             }
-            return sb.ToString();
+            if(sb.Length > 10000)
+                return sb.ToString().Substring(0, 10000) + Environment.NewLine+"... many more results";
+            else
+                return sb.ToString();
         }
+        
+
     }
 }

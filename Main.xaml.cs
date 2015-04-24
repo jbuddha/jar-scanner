@@ -11,6 +11,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -32,40 +34,54 @@ namespace JarScanner
     {
         Keeper keeper;
         private string currentScanPath = "";
-        private readonly BackgroundWorker worker = new BackgroundWorker();
+        private readonly BackgroundWorker scanner = new BackgroundWorker();
 
         string currentJar;
         int TotalJars, TotalFiles;
+
+        string appStoreFolder;
+
         public Main()
         {
             InitializeComponent();
-            worker.DoWork += worker_Scan;
-            worker.RunWorkerCompleted += worker_ScanCompleted;
-            worker.ProgressChanged += worker_ScanProgressChanged;
-            worker.WorkerReportsProgress = true;
+            scanner.DoWork += worker_Scan;
+            scanner.RunWorkerCompleted += worker_ScanCompleted;
+            scanner.ProgressChanged += worker_ScanProgressChanged;
+            scanner.WorkerReportsProgress = true;
+            
+            var userAppDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            appStoreFolder = Path.Combine(userAppDataFolder, System.Diagnostics.Process.GetCurrentProcess().ProcessName);
+            
+            if(!Directory.Exists(appStoreFolder))
+                Directory.CreateDirectory(appStoreFolder);
+            
+            IEnumerable<string> files = Directory.EnumerateFiles(appStoreFolder, "*.bin", SearchOption.AllDirectories);
+            foreach (string file in files) {
+                savedScans.Items.Add(Path.GetFileNameWithoutExtension(file));
+            }
         }
         
         void searchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             var textBox = sender as System.Windows.Controls.TextBox;
-            this.resultText.Text = keeper.ToString(textBox.Text);
+            if(textBox.Text.Length > 2)
+                this.resultText.Text = keeper.ToString(textBox.Text);
         }
 
         void searchBox_GotFocus(object sender, RoutedEventArgs e)
         {
             this.searchBox.GotFocus -= searchBox_GotFocus;
             this.searchBox.Text = "";
-            
+                        this.searchBox.TextChanged += searchBox_TextChanged;
         }
         
         void Main_Loaded(object sender, RoutedEventArgs e)
         {
             this.resultText.Text = "Search Results";
-            this.searchBox.TextChanged += searchBox_TextChanged;
+
             this.searchBox.GotFocus += searchBox_GotFocus;
-            var s = new StringBuilder();
-            
-            this.resultText.Text = s.ToString();
+            this.scanNameTextbox.GotFocus += scanNameTextbox_GotFocus;
+            this.scanNameTextbox.TextChanged += scanNameTextbox_TextChanged;
         }
         void browseButton_Click(object sender, RoutedEventArgs e)
         {
@@ -77,12 +93,12 @@ namespace JarScanner
                 scanProgress.Minimum = 0;
                 scanProgress.Maximum = 100;
                 scanProgress.Value = 0;
-                worker.RunWorkerAsync();
+                scanner.RunWorkerAsync();
             }
             
         }
         
-       // To Refresh the UI immediately
+        // To Refresh the UI immediately
         private delegate void RefreshDelegate();
         private static void Refresh(DependencyObject obj)
         {
@@ -96,23 +112,24 @@ namespace JarScanner
             keeper = new Keeper();
             
             var Entries = new Dictionary<string, ArrayList>();
+            currentJar = "Listing all jars in the given Path";
             string[] files = Directory.GetFiles(currentScanPath, "*.jar", SearchOption.AllDirectories);
 
             int count = files.Length;
             TotalJars = count;
             currentJar = "";
-            worker.ReportProgress(0);
+            scanner.ReportProgress(0);
             int cValue = 0;
             foreach(string file in files){
                 currentJar = file;
-                worker.ReportProgress(100*cValue/count);
+                scanner.ReportProgress(100*cValue/count);
                 Entries.Add(file,new ArrayList());
                 Entries[file] = GetZipEntries(file);
                 
                 cValue++;
             }
             keeper.Entries = Entries;
-            worker.ReportProgress(100);
+            scanner.ReportProgress(100);
             keeper.TotalJars = TotalJars;
             keeper.TotalFiles = TotalFiles;
             resultText.Text = keeper.ToString();
@@ -152,5 +169,39 @@ namespace JarScanner
             }
             return list;
         }
-    }
+        void scanSaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            IFormatter formatter = new BinaryFormatter();
+            Stream stream = new FileStream(appStoreFolder+"/"+scanNameTextbox.Text+".bin", FileMode.Create, FileAccess.Write, FileShare.None);
+            formatter.Serialize(stream, keeper);
+            stream.Close();
+        }
+        void scanNameTextbox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (scanNameTextbox.Text.Length > 0)
+                scanSaveButton.IsEnabled = true;
+            else
+                scanSaveButton.IsEnabled = false;
+        }
+        void scanNameTextbox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            scanNameTextbox.GotFocus -= scanNameTextbox_GotFocus;
+            scanNameTextbox.Text = "";
+        }
+        void savedScans_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var name = appStoreFolder + "/"+savedScans.SelectedValue + ".bin";
+            statusLabel.Content = "Loading Saved Scan from " + name;
+            Refresh(statusLabel);
+            IFormatter formatter = new BinaryFormatter();
+            Stream stream = new FileStream(name, FileMode.Open, FileAccess.Read, FileShare.Read);
+            keeper = (Keeper) formatter.Deserialize(stream);
+            statusLabel.Content = "Loading Completed displaying results";
+            Refresh(statusLabel);
+            stream.Close();
+            statusLabel.Content = "Total Jars: " + keeper.TotalJars + "             Total Files: " + keeper.TotalFiles;
+            resultText.Text = keeper.ToString();
+        }
+        
+     }
 }
